@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Aggregation Form</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(to bottom right, #d1fae5, #a8e6cf, #e6d7b2);
+      transition: background 0.4s ease;
+    }
+    .glass {
+      background: rgba(255, 255, 255, 0.65);
+      backdrop-filter: blur(15px);
+      -webkit-backdrop-filter: blur(15px);
+      border-radius: 15px;
+      padding: 30px;
+      box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+      width: 720px;
+      height: 90vh;
+      overflow-y: auto;
+    }
+    label { font-weight: bold; color: #333; }
+
+    /* Theme */
+    .theme-text { color: #047857; }
+    .theme-bg { background-color: #10b981; }
+    .theme-bg:hover { background-color: #059669; }
+    .theme-border { border-color: #10b981; }
+    h2.theme-title { color: #065f46; }
+
+    /* Session lock state: everything after PIN entry is disabled until session opens */
+    body.session-locked .requires-session {
+      opacity: 0.4;
+      pointer-events: none;
+      user-select: none;
+    }
+
+    /* Definitions box — same style as route creation form */
+    .definitions {
+      background: rgba(255,255,255,0.5);
+      border-left: 4px solid #10b981;
+      border-radius: 6px;
+      padding: 14px 16px;
+      font-size: 13px;
+    }
+    .definitions dt { font-weight: 700; color: #1f2937; margin-top: 4px; }
+    .definitions dd { margin-left: 0; color: #4b5563; margin-bottom: 6px; }
+
+    /* Scan card (one per vendor, analogous to vendor-card in route creation) */
+    .scan-card {
+      background: rgba(255,255,255,0.55);
+      border: 1px solid #d1d5db;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 12px;
+    }
+
+    /* Item card (one per produce line, analogous to crop-card) */
+    .item-card {
+      background: rgba(236,253,245,0.6);
+      border: 1px solid #a7f3d0;
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 8px;
+    }
+    .item-card.has-issue {
+      background: rgba(254, 242, 242, 0.7);
+      border-color: #fca5a5;
+    }
+
+    /* Yes/No toggle buttons — bigger tap targets for mobile field use */
+    .yn-group { display: inline-flex; gap: 4px; }
+    .yn-btn {
+      padding: 6px 18px;
+      border: 2px solid #d1d5db;
+      background: white;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 13px;
+      cursor: pointer;
+      color: #6b7280;
+      transition: all 0.15s;
+    }
+    .yn-btn:hover { border-color: #9ca3af; }
+    .yn-btn.selected-yes { background: #10b981; border-color: #10b981; color: white; }
+    .yn-btn.selected-no  { background: #ef4444; border-color: #ef4444; color: white; }
+
+    /* Status banner */
+    .status-badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+    .status-locked { background: #fee2e2; color: #991b1b; }
+    .status-active { background: #d1fae5; color: #065f46; }
+
+    /* QR scan action button — prominent since it's the primary action */
+    .scan-btn {
+      background: linear-gradient(135deg, #10b981, #047857);
+      color: white;
+      padding: 14px 24px;
+      border-radius: 12px;
+      font-weight: 700;
+      font-size: 15px;
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
+      transition: transform 0.1s;
+    }
+    .scan-btn:hover { transform: translateY(-1px); }
+    .scan-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+    /* Refrigeration badge */
+    .fridge-badge {
+      display: inline-block;
+      background: #dbeafe;
+      color: #1e40af;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .organic-badge {
+      display: inline-block;
+      background: #dcfce7;
+      color: #166534;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    /* Confirmation overlay */
+    .confirm-overlay {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.5);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 50;
+    }
+    .confirm-modal {
+      background: white;
+      border-radius: 12px;
+      padding: 24px;
+      width: 600px;
+      max-height: 85vh;
+      overflow-y: auto;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+    }
+  </style>
+</head>
+<body class="session-locked">
+  <div class="glass p-6">
+    <div class="text-center mb-4">
+      <a href="https://farmersmarket-hub.github.io/Home/" target="_blank">
+        <img src="images/Market_logo.png" alt="Market Logo" class="mx-auto" style="max-height: 100px;">
+      </a>
+    </div>
+    <h2 class="theme-title text-2xl font-bold text-center mb-2">Aggregation Form</h2>
+    <p class="text-center italic text-sm text-gray-700 mb-4">Aggregator validates each vendor pickup as the route is run. Entry point: QR code scan of the vendor's Supply Chain Load Form submission.</p>
+
+    <!-- Session status banner -->
+    <div id="sessionBanner" class="mb-4 p-3 rounded-md border-l-4 border-red-500 bg-red-50 text-sm">
+      <span class="status-badge status-locked">🔒 Session Locked</span>
+      <span class="ml-2 text-red-900">Enter aggregator PIN below to open the session.</span>
+    </div>
+
+    <!-- Key Definitions -->
+    <div class="definitions mb-5">
+      <p class="font-bold text-gray-800 mb-2">📖 Key Definitions</p>
+      <dl>
+        <dt>Aggregation Session</dt>
+        <dd>One complete route run — opens when the aggregator's PIN is validated, closes on submit. One parent record per route run, regardless of how many vendors are visited.</dd>
+        <dt>Scan Record</dt>
+        <dd>A child record under the session, created per vendor QR scan. Each scan captures validation of that vendor's load against what their Supply Chain Load Form promised.</dd>
+        <dt>Ad-hoc Driver</dt>
+        <dd>A substitute running the route who is NOT registered as primary or secondary aggregator for the business. Manual name entry required; routes to manager for approval.</dd>
+        <dt>PIN</dt>
+        <dd>Aggregator's personal numeric identifier. Validated against the aggregator assigned to this route in the Route Creation form.</dd>
+      </dl>
+    </div>
+
+    <form id="aggregationForm" onsubmit="submitForm(event)" class="space-y-4">
+
+      <!-- ═══════════════════════════════════════════════════════════════ -->
+      <!-- SECTION 1: SESSION OPENING (PIN entry BEFORE any QR scan)       -->
+      <!-- ═══════════════════════════════════════════════════════════════ -->
+      <h3 class="text-lg font-bold theme-text">🔑 Session Opening</h3>
+      <p class="text-xs text-gray-500">PIN entry is required <b>before</b> any QR scanning can occur.</p>
+
+      <div>
+        <label>Aggregator PIN <span class="text-red-500">*</span>
+          <span class="text-sm font-normal text-gray-500 block">(Personal PIN — validated against the aggregator assigned to this route)</span>
+        </label>
+        <div class="flex gap-2 mt-1">
+          <input type="password" id="aggregatorPin" class="flex-1 p-2 border rounded bg-white" placeholder="Enter PIN (try 1234 or 5678 for demo)" maxlength="6" autocomplete="off">
+          <button type="button" onclick="validatePin()" class="theme-bg text-white px-4 py-2 rounded font-semibold text-sm">Validate</button>
+        </div>
+        <p id="pinError" class="text-xs text-red-600 mt-1 hidden">⚠️ PIN does not match the aggregator assigned to this route.</p>
+      </div>
+
+      <!-- Substitute option (manager override) -->
+      <div class="p-3 border border-amber-300 bg-amber-50 rounded">
+        <p class="text-xs font-semibold text-amber-900 mb-2">⚠️ PIN not recognized? A manager can issue a substitute override:</p>
+        <button type="button" onclick="requestSubstitute()" class="bg-amber-500 hover:bg-amber-600 text-white px-3 py-1.5 rounded text-xs font-semibold">Request Manager Substitute</button>
+        <p id="substituteStatus" class="text-xs text-amber-900 mt-2 hidden"></p>
+      </div>
+
+      <hr class="border-gray-300">
+
+      <!-- ═══════════════════════════════════════════════════════════════ -->
+      <!-- SECTION 2: ROUTE & AGGREGATOR CONTEXT (auto-retrieved on PIN)    -->
+      <!-- ═══════════════════════════════════════════════════════════════ -->
+      <div class="requires-session">
+        <h3 class="text-lg font-bold theme-text">🚚 Route & Aggregator Context</h3>
+        <p class="text-xs text-gray-500 mb-3">Auto-populated on PIN validation (from Route Creation form).</p>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="text-sm">Route ID</label>
+            <input type="text" id="routeId" class="w-full p-2 border rounded bg-gray-100 text-sm" readonly>
+          </div>
+          <div>
+            <label class="text-sm">Route Name</label>
+            <input type="text" id="routeName" class="w-full p-2 border rounded bg-gray-100 text-sm" readonly>
+          </div>
+          <div>
+            <label class="text-sm">Aggregator Business</label>
+            <input type="text" id="aggregatorBusiness" class="w-full p-2 border rounded bg-gray-100 text-sm" readonly>
+          </div>
+          <div>
+            <label class="text-sm">Session Opened (date/time)</label>
+            <input type="text" id="sessionOpenedAt" class="w-full p-2 border rounded bg-gray-100 text-sm" readonly>
+          </div>
+        </div>
+
+        <!-- Individual running the route today -->
+        <div class="mt-4">
+          <label>Individual Running Route Today <span class="text-red-500">*</span></label>
+          <div class="space-y-2 mt-2">
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input type="radio" name="runningIndividualType" value="assigned" checked onchange="toggleDriverType()">
+              <span class="text-sm font-normal">Primary/Secondary from assigned aggregator business</span>
+            </label>
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input type="radio" name="runningIndividualType" value="adhoc" onchange="toggleDriverType()">
+              <span class="text-sm font-normal">Ad-hoc driver (not on registered list — requires manager approval)</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Assigned individual dropdown -->
+        <div id="assignedDriverSection" class="mt-3">
+          <label class="text-sm">Select Individual</label>
+          <select id="assignedDriver" class="w-full p-2 border rounded bg-white text-sm">
+            <option value="">- Select -</option>
+          </select>
+          <p class="text-xs text-gray-500 mt-1">Auto-populated from the aggregator business's registered primary + secondary list.</p>
+        </div>
+
+        <!-- Ad-hoc driver manual entry -->
+        <div id="adhocDriverSection" class="mt-3 hidden">
+          <div class="p-3 border border-amber-300 bg-amber-50 rounded">
+            <p class="text-xs font-semibold text-amber-900 mb-2">⚠️ Ad-hoc capture — routes to manager for approval after session closes.</p>
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="text-xs font-semibold">First Name <span class="text-red-500">*</span></label>
+                <input type="text" id="adhocFirstName" class="w-full p-1.5 border rounded bg-white text-sm" placeholder="First name">
+              </div>
+              <div>
+                <label class="text-xs font-semibold">Last Name <span class="text-red-500">*</span></label>
+                <input type="text" id="adhocLastName" class="w-full p-1.5 border rounded bg-white text-sm" placeholder="Last name">
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <hr class="border-gray-300">
+
+      <!-- ═══════════════════════════════════════════════════════════════ -->
+      <!-- SECTION 3: VENDOR SCANS (one child record per QR scan)           -->
+      <!-- ═══════════════════════════════════════════════════════════════ -->
+      <div class="requires-session">
+        <div class="flex items-center justify-between">
+          <h3 class="text-lg font-bold theme-text">📱 Vendor Scans</h3>
+          <span id="scanCount" class="text-sm text-gray-600">0 scans</span>
+        </div>
+        <p class="text-xs text-gray-500 mt-1 mb-3">Scan each farmer's QR code (generated from their Supply Chain Load Form) as you arrive at their pickup. Each scan auto-retrieves their produce list, organic status, and produce IDs, then adds a timestamp + GIS coordinates.</p>
+
+        <button type="button" id="scanBtn" onclick="simulateScan()" class="scan-btn">
+          <span class="text-2xl">📷</span>
+          <span>Scan Vendor QR Code</span>
+        </button>
+
+        <div id="scansContainer" class="mt-4"></div>
+      </div>
+
+      <hr class="border-gray-300">
+
+      <!-- ═══════════════════════════════════════════════════════════════ -->
+      <!-- SECTION 4: SESSION CLOSEOUT                                      -->
+      <!-- ═══════════════════════════════════════════════════════════════ -->
+      <div class="requires-session">
+        <h3 class="text-lg font-bold theme-text">📝 Session Closeout</h3>
+
+        <div class="mt-2">
+          <label class="text-sm">Overall Session Comments (optional)</label>
+          <textarea id="sessionComments" rows="2" class="w-full p-2 border rounded bg-white text-sm" placeholder="Any notes about the full route run — delays, incidents across multiple vendors, weather, etc."></textarea>
+        </div>
+
+        <div class="text-center mt-4">
+          <button type="submit" id="submitBtn" class="theme-bg text-white font-bold py-2 px-6 rounded-full">Submit Aggregation Session</button>
+        </div>
+      </div>
+    </form>
+  </div>
+
+  <!-- Confirmation Modal -->
+  <div id="confirmOverlay" class="confirm-overlay hidden">
+    <div class="confirm-modal">
+      <div class="text-center mb-4">
+        <div class="text-5xl mb-2">✅</div>
+        <h2 class="text-2xl font-bold text-gray-800">Aggregation Session Submitted!</h2>
+        <p class="text-sm text-gray-600 mt-1">Notifications sent to manager. Any "No" validations and ad-hoc captures are flagged for follow-up.</p>
+      </div>
+      <div id="confirmContent" class="space-y-3 border-t border-gray-200 pt-4"></div>
+      <div class="text-center mt-6">
+        <button type="button" onclick="closeConfirmation()" class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-6 rounded-full">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ─── State ────────────────────────────────────────────────────────────
+    let sessionActive = false;
+    let scanCounter = 0;
+    let validatedAggregator = null;
+
+    // Sample route context — in production, fetched from backend by active route assignment
+    const SAMPLE_ROUTE = {
+      routeId: 'RT-AB12C',
+      routeName: 'Thursday NE Portland Route',
+      aggregatorBusiness: 'Cascade Logistics LLC',
+      assignedAggregators: [
+        { pin: '1234', first: 'John',  last: 'Doe',   role: 'Primary'   },
+        { pin: '5678', first: 'Maria', last: 'Lopez', role: 'Secondary' }
+      ]
+    };
+
+    // Sample vendor QR payloads — in production, each scan retrieves this from Load Form backend
+    const SAMPLE_VENDORS = [
+      {
+        vendorId: 'V-1001', vendorName: 'Green Acres Farm', organic: true, plannedPickupTime: '09:00',
+        items: [
+          { produceId: 'P-20261014-001', name: 'Kale',     expectedQty: 15, unit: 'lbs', condition: 'Fresh, unwashed', refrigerated: true  },
+          { produceId: 'P-20261014-002', name: 'Tomatoes', expectedQty: 20, unit: 'lbs', condition: 'Ripe',            refrigerated: false },
+          { produceId: 'P-20261014-003', name: 'Carrots',  expectedQty: 10, unit: 'lbs', condition: 'Trimmed',         refrigerated: true  }
+        ]
+      },
+      {
+        vendorId: 'V-1002', vendorName: 'Sunrise Produce', organic: false, plannedPickupTime: '09:30',
+        items: [
+          { produceId: 'P-20261014-004', name: 'Blueberries',  expectedQty: 8, unit: 'lbs', condition: 'Firm, sweet', refrigerated: true },
+          { produceId: 'P-20261014-005', name: 'Strawberries', expectedQty: 5, unit: 'lbs', condition: 'Ripe',        refrigerated: true }
+        ]
+      },
+      {
+        vendorId: 'V-1003', vendorName: 'Heritage Growers', organic: true, plannedPickupTime: '10:00',
+        items: [
+          { produceId: 'P-20261014-006', name: 'Green Beans', expectedQty: 12, unit: 'lbs', condition: 'Crisp',       refrigerated: false },
+          { produceId: 'P-20261014-007', name: 'Zucchini',    expectedQty: 18, unit: 'lbs', condition: 'Medium size', refrigerated: false }
+        ]
+      }
+    ];
+
+    // Init — load route context into read-only fields
+    function init() {
+      document.getElementById('routeId').value = SAMPLE_ROUTE.routeId;
+      document.getElementById('routeName').value = SAMPLE_ROUTE.routeName;
+      document.getElementById('aggregatorBusiness').value = SAMPLE_ROUTE.aggregatorBusiness;
+    }
+    init();
+
+    // ─── PIN Validation ───────────────────────────────────────────────────
+    function validatePin() {
+      const entered = document.getElementById('aggregatorPin').value.trim();
+      const err = document.getElementById('pinError');
+      const match = SAMPLE_ROUTE.assignedAggregators.find(a => a.pin === entered);
+      if (match) {
+        err.classList.add('hidden');
+        openSession(match);
+      } else {
+        err.classList.remove('hidden');
+      }
+    }
+
+    function openSession(matched) {
+      sessionActive = true;
+      validatedAggregator = matched;
+      document.body.classList.remove('session-locked');
+
+      const now = new Date().toLocaleString('en-US', { timeZone: 'America/Los_Angeles' });
+      document.getElementById('sessionOpenedAt').value = now;
+
+      // Update banner
+      const banner = document.getElementById('sessionBanner');
+      banner.className = 'mb-4 p-3 rounded-md border-l-4 border-green-500 bg-green-50 text-sm';
+      banner.innerHTML = `
+        <span class="status-badge status-active">🟢 Session Active</span>
+        <span class="ml-2 text-green-900">Validated as <b>${matched.first} ${matched.last}</b> (${matched.role}). Begin scanning vendors below.</span>
+      `;
+
+      // Populate assigned-driver dropdown with session's default pre-selected
+      const sel = document.getElementById('assignedDriver');
+      sel.innerHTML = '<option value="">- Select -</option>';
+      SAMPLE_ROUTE.assignedAggregators.forEach(a => {
+        const selected = a.pin === matched.pin ? 'selected' : '';
+        sel.innerHTML += `<option value="${a.first}|${a.last}|${a.role}" ${selected}>${a.first} ${a.last} (${a.role})</option>`;
+      });
+
+      // Lock the PIN input so it can't be changed after validation
+      document.getElementById('aggregatorPin').disabled = true;
+    }
+
+    function requestSubstitute() {
+      const s = document.getElementById('substituteStatus');
+      s.classList.remove('hidden');
+      s.textContent = '✅ Substitute request sent to manager. They will issue an override PIN — contact them directly.';
+    }
+
+    // ─── Driver Type Toggle ──────────────────────────────────────────────
+    function toggleDriverType() {
+      const type = document.querySelector('input[name="runningIndividualType"]:checked').value;
+      document.getElementById('assignedDriverSection').classList.toggle('hidden', type !== 'assigned');
+      document.getElementById('adhocDriverSection').classList.toggle('hidden', type !== 'adhoc');
+    }
+
+    // ─── QR Scan Simulation ──────────────────────────────────────────────
+    function simulateScan() {
+      if (!sessionActive) return;
+      const container = document.getElementById('scansContainer');
+      const idx = container.children.length;
+      if (idx >= SAMPLE_VENDORS.length) {
+        alert('All sample vendors have been scanned.\n\nIn production, each farmer generates a unique QR code from their Supply Chain Load Form. The aggregator scans each one as they arrive at the pickup.');
+        return;
+      }
+      renderScanCard(SAMPLE_VENDORS[idx]);
+      updateScanCount();
+    }
+
+    function updateScanCount() {
+      const n = document.getElementById('scansContainer').children.length;
+      document.getElementById('scanCount').textContent = `${n} scan${n !== 1 ? 's' : ''}`;
+    }
+
+    function renderScanCard(vendor) {
+      scanCounter++;
+      const n = scanCounter;
+      const container = document.getElementById('scansContainer');
+      const scanNum = container.children.length + 1;
+      const now = new Date().toLocaleString('en-US', { timeZone: 'America/Los_Angeles' });
+      // Fake GIS coords for demo (Portland area)
+      const lat = (45.55 + Math.random() * 0.05).toFixed(5);
+      const lng = (-122.6 - Math.random() * 0.05).toFixed(5);
+
+      const card = document.createElement('div');
+      card.className = 'scan-card';
+      card.id = `scan-${n}`;
+      card.dataset.scanIdx = n;
+      card.vendorData = vendor; // attach for submit summary
+
+      const badges = [];
+      if (vendor.organic) badges.push('<span class="organic-badge">🌱 Organic</span>');
+      else badges.push('<span class="text-xs text-gray-500">Conventional</span>');
+
+      card.innerHTML = `
+        <div class="flex items-start justify-between mb-3">
+          <div class="flex-1 min-w-0">
+            <span class="text-xs font-bold theme-text uppercase">Scan #${scanNum}</span>
+            <div class="font-bold text-gray-800 text-base">${vendor.vendorName}</div>
+            <div class="text-xs text-gray-600 mt-0.5">Vendor ID: ${vendor.vendorId} · ${badges.join(' ')}</div>
+          </div>
+          <button type="button" onclick="removeScan(${n})" class="text-red-500 hover:text-red-700 font-bold text-lg flex-shrink-0">✕</button>
+        </div>
+
+        <!-- Auto-retrieved meta: timestamp, GIS, planned pickup, item count -->
+        <div class="grid grid-cols-2 gap-2 text-xs text-gray-700 bg-gray-50 p-2 rounded mb-3">
+          <div><span class="font-semibold">Scan timestamp:</span><br>${now}</div>
+          <div><span class="font-semibold">GIS coordinates:</span><br>${lat}, ${lng}</div>
+          <div><span class="font-semibold">Planned pickup:</span><br>${vendor.plannedPickupTime}</div>
+          <div><span class="font-semibold">Items expected:</span><br>${vendor.items.length}</div>
+        </div>
+
+        <!-- Per-item validation (three Y/N checks per item + reason-if-no) -->
+        <div class="text-xs font-semibold text-gray-700 mb-2">Per-Item Validation:</div>
+        <div class="space-y-2">
+          ${vendor.items.map((item, i) => renderItemRow(n, i, item)).join('')}
+        </div>
+
+        ${vendor.items.some(i => i.refrigerated) ? renderColdStorage(n) : ''}
+
+        <!-- Vendor-level comments -->
+        <div class="mt-3">
+          <label class="text-xs font-semibold">Comments (optional)</label>
+          <textarea class="scan-comments w-full p-1.5 border rounded bg-white text-sm" rows="2" placeholder="Delays, unusual observations, wait time, etc."></textarea>
+        </div>
+      `;
+
+      container.appendChild(card);
+    }
+
+    function renderItemRow(scanN, itemIdx, item) {
+      const fridge = item.refrigerated ? '<span class="fridge-badge ml-1">❄️ Refrigerated</span>' : '';
+      return `
+        <div class="item-card" data-item-idx="${itemIdx}">
+          <div class="font-semibold text-sm text-gray-800 mb-0.5">${item.name} ${fridge}</div>
+          <div class="text-xs text-gray-600 mb-2">
+            ID: <span class="font-mono">${item.produceId}</span> ·
+            Expected: <b>${item.expectedQty} ${item.unit}</b> ·
+            Condition: <i>${item.condition}</i>
+          </div>
+          ${renderYN(scanN, itemIdx, 'present',   'Items present?')}
+          ${renderYN(scanN, itemIdx, 'quantity',  'Quantity of item correct?')}
+          ${renderYN(scanN, itemIdx, 'condition', 'Item condition matching?')}
+        </div>
+      `;
+    }
+
+    function renderYN(scanN, itemIdx, key, label) {
+      const id = `${key}-${itemIdx}`;
+      return `
+        <div class="mb-1.5">
+          <div class="flex items-center gap-2">
+            <span class="text-xs flex-1">${label} <span class="text-red-500">*</span></span>
+            <div class="yn-group">
+              <button type="button" class="yn-btn" onclick="selectYN(this, 'yes', '${id}')">Y</button>
+              <button type="button" class="yn-btn" onclick="selectYN(this, 'no',  '${id}')">N</button>
+            </div>
+          </div>
+          <input type="hidden" class="yn-flag yn-${id}">
+          <div class="yn-${id}-reason reason-wrapper hidden mt-1">
+            <label class="text-xs font-semibold text-red-700">Reason for "No" <span class="text-red-500">*</span></label>
+            <textarea class="reason-input w-full p-1.5 border rounded bg-white text-xs" rows="1" placeholder="Explain the discrepancy"></textarea>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderColdStorage(scanN) {
+      return `
+        <div class="mt-3 p-3 border border-blue-200 bg-blue-50 rounded">
+          <div class="flex items-center gap-2">
+            <span class="text-xs font-semibold text-blue-900 flex-1">❄️ Refrigerated items loaded into cold storage on the truck? <span class="text-red-500">*</span></span>
+            <div class="yn-group">
+              <button type="button" class="yn-btn" onclick="selectYN(this, 'yes', 'cold')">Y</button>
+              <button type="button" class="yn-btn" onclick="selectYN(this, 'no',  'cold')">N</button>
+            </div>
+          </div>
+          <input type="hidden" class="yn-flag yn-cold cold-storage-flag">
+          <div class="yn-cold-reason reason-wrapper hidden mt-2">
+            <label class="text-xs font-semibold text-red-700">Reason <span class="text-red-500">*</span></label>
+            <textarea class="reason-input w-full p-1.5 border rounded bg-white text-xs" rows="1" placeholder="Why did refrigerated items not reach cold storage?"></textarea>
+          </div>
+        </div>
+      `;
+    }
+
+    // ─── Y/N selection handler ───────────────────────────────────────────
+    function selectYN(btn, choice, id) {
+      // Visually toggle Y/N button pair
+      const group = btn.parentElement;
+      group.querySelectorAll('.yn-btn').forEach(b => b.classList.remove('selected-yes', 'selected-no'));
+      btn.classList.add(choice === 'yes' ? 'selected-yes' : 'selected-no');
+
+      // Update hidden flag value
+      const card = btn.closest('.scan-card');
+      const flag = card.querySelector('.yn-' + id);
+      if (flag) flag.value = choice;
+
+      // Toggle reason wrapper (shown when No, hidden when Yes)
+      const reasonWrapper = card.querySelector('.yn-' + id + '-reason');
+      if (reasonWrapper) reasonWrapper.classList.toggle('hidden', choice !== 'no');
+
+      // Highlight parent item-card if any validation is No
+      const itemCard = btn.closest('.item-card');
+      if (itemCard) {
+        const anyNo = [...itemCard.querySelectorAll('.yn-flag')].some(f => f.value === 'no');
+        itemCard.classList.toggle('has-issue', anyNo);
+      }
+    }
+
+    function removeScan(n) {
+      document.getElementById('scan-' + n)?.remove();
+      updateScanCount();
+    }
+
+    // ─── Submit ──────────────────────────────────────────────────────────
+    function submitForm(e) {
+      e.preventDefault();
+      if (!sessionActive) { alert('Please validate your PIN to open the session before submitting.'); return; }
+
+      const scans = document.querySelectorAll('#scansContainer .scan-card');
+      if (scans.length === 0) { alert('Scan at least one vendor before submitting.'); return; }
+
+      // Ad-hoc driver validation
+      const driverType = document.querySelector('input[name="runningIndividualType"]:checked').value;
+      if (driverType === 'adhoc') {
+        const fn = document.getElementById('adhocFirstName').value.trim();
+        const ln = document.getElementById('adhocLastName').value.trim();
+        if (!fn || !ln) { alert('Ad-hoc driver requires both first and last name.'); return; }
+      }
+
+      // Make sure every Y/N is answered and every "No" has a reason
+      let incomplete = [];
+      scans.forEach((card, si) => {
+        card.querySelectorAll('.yn-flag').forEach(flag => {
+          if (!flag.value) {
+            incomplete.push(`Scan ${si + 1}: missing Y/N answer`);
+            return;
+          }
+          if (flag.value === 'no') {
+            const key = [...flag.classList].find(c => c.startsWith('yn-') && c !== 'yn-flag' && c !== 'yn-cold');
+            const wrapper = card.querySelector('.' + (key || 'yn-cold') + '-reason, .yn-cold-reason');
+            const reasonInput = wrapper?.querySelector('.reason-input');
+            if (reasonInput && !reasonInput.value.trim()) {
+              incomplete.push(`Scan ${si + 1}: reason required for a "No" answer`);
+            }
+          }
+        });
+      });
+      if (incomplete.length) {
+        alert('Please complete the following before submitting:\n\n' + [...new Set(incomplete)].slice(0, 5).join('\n'));
+        return;
+      }
+
+      // Build confirmation summary
+      let scanSummary = '';
+      scans.forEach((card, i) => {
+        const v = card.vendorData;
+        const issues = [...card.querySelectorAll('.yn-flag')].filter(f => f.value === 'no').length;
+        const tag = issues > 0 ? `⚠️ ${issues} discrepancy flag${issues !== 1 ? 's' : ''}` : '✓ all verified';
+        scanSummary += `<li><b>${v.vendorName}</b> — ${v.items.length} item(s) · ${tag}</li>`;
+      });
+
+      const driverInfo = driverType === 'adhoc'
+        ? `${document.getElementById('adhocFirstName').value} ${document.getElementById('adhocLastName').value} <span class="text-amber-700 font-semibold">(Ad-hoc — pending manager approval)</span>`
+        : (document.getElementById('assignedDriver').selectedOptions[0]?.text || '-');
+
+      const closed = new Date().toLocaleString('en-US', { timeZone: 'America/Los_Angeles' });
+
+      document.getElementById('confirmContent').innerHTML = `
+        <div><span class="font-bold">Route:</span> ${SAMPLE_ROUTE.routeName} (${SAMPLE_ROUTE.routeId})</div>
+        <div><span class="font-bold">Aggregator Business:</span> ${SAMPLE_ROUTE.aggregatorBusiness}</div>
+        <div><span class="font-bold">Individual Running Route:</span> ${driverInfo}</div>
+        <div><span class="font-bold">Session Opened:</span> ${document.getElementById('sessionOpenedAt').value}</div>
+        <div><span class="font-bold">Session Closed:</span> ${closed}</div>
+        <div class="pt-2 border-t border-gray-200">
+          <div class="font-bold mb-1">Vendor Scans (${scans.length}):</div>
+          <ol class="list-decimal pl-5 text-sm">${scanSummary}</ol>
+        </div>
+        <div class="pt-3 text-xs text-gray-500 italic">
+          📨 Manager notified. Any "No" validations and ad-hoc captures are flagged for manager follow-up.
+        </div>
+      `;
+      document.getElementById('confirmOverlay').classList.remove('hidden');
+    }
+
+    function closeConfirmation() {
+      document.getElementById('confirmOverlay').classList.add('hidden');
+    }
+  </script>
+</body>
+</html>
